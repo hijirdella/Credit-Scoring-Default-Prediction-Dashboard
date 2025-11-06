@@ -156,7 +156,7 @@ def main():
 
     st.markdown("**Raw data preview**")
     st.write(f"Shape: {df_raw.shape[0]} rows × {df_raw.shape[1]} columns")
-    st.dataframe(df_raw, use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(df_raw, height=TABLE_HEIGHT)
 
     # 2. Exploratory Data Analysis
     st.subheader("2. Exploratory Data Analysis (EDA)")
@@ -167,15 +167,11 @@ def main():
     if num_summary.empty:
         st.write("No numeric columns found.")
     else:
-        st.dataframe(num_summary, use_container_width=True, height=TABLE_HEIGHT)
+        st.dataframe(num_summary, height=TABLE_HEIGHT)
 
     # 2.1b Column overview
     st.markdown("#### 2.2 Column overview")
-    st.dataframe(
-        build_column_overview(df_raw),
-        use_container_width=True,
-        height=TABLE_HEIGHT,
-    )
+    st.dataframe(build_column_overview(df_raw), height=TABLE_HEIGHT)
 
     # 2.3 Numeric distributions
     st.markdown("#### 2.3 Numeric distributions (orange histograms)")
@@ -209,7 +205,7 @@ def main():
         if col in df_raw.columns:
             freq = cat_summary(df_raw, col, top_n=10)
             with st.expander(f"Distribution of {col}"):
-                st.dataframe(freq, use_container_width=True, height=TABLE_HEIGHT)
+                st.dataframe(freq, height=TABLE_HEIGHT)
                 fig = plot_bar_orange(
                     values=freq["count"].values,
                     labels=freq.index.astype(str).tolist(),
@@ -298,7 +294,7 @@ def main():
 
     st.markdown("**Customer-level feature preview**")
     st.write(f"Number of customers (rows): {df_features.shape[0]}")
-    st.dataframe(df_features, use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(df_features, height=TABLE_HEIGHT)
 
     # 3.2 Load model
     try:
@@ -355,7 +351,7 @@ def main():
 
     st.markdown("**Scored data preview (customer level)**")
     st.write(f"Total customers scored: {scored_df.shape[0]}")
-    st.dataframe(scored_df, use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(scored_df, height=TABLE_HEIGHT)
 
     # 3.4 Prediction distribution
     st.markdown("#### 3.1 Prediction distribution")
@@ -370,7 +366,7 @@ def main():
             percentage=lambda x: (x["count"] / total_pred * 100).round(2),
         )
     )
-    st.dataframe(pred_summary, use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(pred_summary, height=TABLE_HEIGHT)
 
     # Bar chart with green for non-default, orange for default
     fig, ax = plt.subplots()
@@ -380,7 +376,12 @@ def main():
             bar_colors.append("#66BB6A")  # green for non-default
         else:
             bar_colors.append("#FF8A00")  # orange for default
-    ax.bar(pred_summary["label"], pred_summary["count"], color=bar_colors, edgecolor="black")
+    ax.bar(
+        pred_summary["label"],
+        pred_summary["count"],
+        color=bar_colors,
+        edgecolor="black",
+    )
     ax.set_xlabel("Predicted label")
     ax.set_ylabel("Number of customers")
     ax.set_title("Prediction distribution (counts)")
@@ -428,7 +429,7 @@ def main():
             decile_pd["n_customers"] / decile_pd["n_customers"].sum() * 100
         ).round(2)
 
-        st.dataframe(decile_pd, use_container_width=True, height=TABLE_HEIGHT)
+        st.dataframe(decile_pd, height=TABLE_HEIGHT)
 
         fig = plot_bar_orange(
             values=decile_pd["avg_pd"].values,
@@ -487,7 +488,7 @@ def main():
                 }
             ).sort_values("importance", ascending=False)
 
-            st.dataframe(fi, use_container_width=True, height=TABLE_HEIGHT)
+            st.dataframe(fi, height=TABLE_HEIGHT)
 
             top_fi = fi.head(10)
             fig = plot_bar_orange(
