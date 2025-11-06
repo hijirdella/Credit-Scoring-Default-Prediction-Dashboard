@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import joblib
+import seaborn as sns
 
 import creditdefault as cd  # local module
 
@@ -610,3 +611,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
