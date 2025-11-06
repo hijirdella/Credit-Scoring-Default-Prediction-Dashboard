@@ -1,7 +1,7 @@
 # Credit Scoring Default Prediction Dashboard
 https://credit-scoring-default-prediction-dashboard.streamlit.app/<br>
 A Streamlit web application for Credit Scoring and Default Prediction.  
-This project demonstrates a complete end-to-end workflow — from raw data upload and EDA to machine learning–based probability scoring, risk segmentation, and result export.
+This project demonstrates a complete end-to-end workflow from raw data upload and EDA to machine learning–based probability scoring, risk segmentation, and result export.
 
 ---
 
