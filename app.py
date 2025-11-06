@@ -156,7 +156,7 @@ def main():
 
     st.markdown("**Raw data preview**")
     st.write(f"Shape: {df_raw.shape[0]} rows × {df_raw.shape[1]} columns")
-    st.dataframe(df_raw.head(), use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(df_raw, use_container_width=True, height=TABLE_HEIGHT)
 
     # 2. Exploratory Data Analysis
     st.subheader("2. Exploratory Data Analysis (EDA)")
@@ -298,7 +298,7 @@ def main():
 
     st.markdown("**Customer-level feature preview**")
     st.write(f"Number of customers (rows): {df_features.shape[0]}")
-    st.dataframe(df_features.head(), use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(df_features, use_container_width=True, height=TABLE_HEIGHT)
 
     # 3.2 Load model
     try:
@@ -355,7 +355,7 @@ def main():
 
     st.markdown("**Scored data preview (customer level)**")
     st.write(f"Total customers scored: {scored_df.shape[0]}")
-    st.dataframe(scored_df.head(), use_container_width=True, height=TABLE_HEIGHT)
+    st.dataframe(scored_df, use_container_width=True, height=TABLE_HEIGHT)
 
     # 3.4 Prediction distribution
     st.markdown("#### 3.1 Prediction distribution")
