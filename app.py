@@ -355,8 +355,8 @@ def main():
 
     # Label and color mapping (non-default = green, default = orange)
     label_color_map = {
-        0: ("Non-default (0)", "#66BB6A"),  # green
-        1: ("Default (1)", "#FF8A00"),      # orange
+        0: ("Non-default (0)", "#66BB6A"),
+        1: ("Default (1)", "#FF8A00"),
     }
 
     labels = []
@@ -408,7 +408,7 @@ def main():
         fig.tight_layout()
         st.pyplot(fig)
 
-    # 3.5 Decile analysis based on predicted PD
+    # 3.5 PD decile analysis based on predicted PD
     st.markdown("#### 3.2 PD decile analysis (by predicted probability)")
 
     try:
@@ -449,9 +449,79 @@ def main():
     except Exception as e:
         st.error(f"Failed to compute PD deciles: {e}")
 
-    # 3.6 Feature importance (if available)
+    # 3.6 Acceptance strategy for 2% target portfolio default rate
+    st.markdown("#### 3.3 Acceptance strategy for 2% target portfolio default rate")
+
+    target_portfolio_default = 0.02  # 2%
+
+    try:
+        tmp_acc = scored_df[["customer_id", "pd_score"]].copy()
+        tmp_acc = tmp_acc.sort_values("pd_score").reset_index(drop=True)
+
+        tmp_acc["expected_default"] = tmp_acc["pd_score"]
+        tmp_acc["cum_expected_default"] = tmp_acc["expected_default"].cumsum()
+        tmp_acc["cum_customers"] = np.arange(1, len(tmp_acc) + 1)
+        tmp_acc["cum_default_rate"] = (
+            tmp_acc["cum_expected_default"] / tmp_acc["cum_customers"]
+        )
+
+        eligible_idx = tmp_acc.index[
+            tmp_acc["cum_default_rate"] <= target_portfolio_default
+        ]
+
+        if len(eligible_idx) == 0:
+            st.warning(
+                "Even the lowest-risk customer has an expected default rate above 2%. "
+                "Under this target, no loans would be accepted."
+            )
+            accepted_threshold_pd = None
+        else:
+            last_idx = eligible_idx.max()
+            accepted_threshold_pd = tmp_acc.loc[last_idx, "pd_score"]
+
+            n_accepted = last_idx + 1
+            share_accepted = n_accepted / len(tmp_acc) * 100
+            portfolio_default = tmp_acc.loc[last_idx, "cum_default_rate"] * 100
+
+            st.write(
+                f"With a 2% target portfolio default rate, the strategy would accept "
+                f"the lowest-risk {n_accepted} customers "
+                f"({share_accepted:.1f}% of the portfolio), "
+                f"up to a PD threshold of approximately {accepted_threshold_pd:.4f}."
+            )
+            st.write(
+                f"The expected cumulative default rate of the accepted portfolio is "
+                f"about {portfolio_default:.2f}%."
+            )
+
+            scored_df["accepted_2pct_strategy"] = (
+                scored_df["pd_score"] <= accepted_threshold_pd
+            ).astype(int)
+
+            summary_accept = (
+                scored_df["accepted_2pct_strategy"]
+                .value_counts()
+                .rename(index={0: "Rejected", 1: "Accepted"})
+                .to_frame("n_customers")
+            )
+            summary_accept["share_pct"] = (
+                summary_accept["n_customers"] / len(scored_df) * 100
+            ).round(2)
+
+            st.markdown("**Acceptance summary (2% target strategy)**")
+            st.dataframe(summary_accept)
+
+            st.markdown(
+                "You can filter the downloaded CSV on `accepted_2pct_strategy = 1` "
+                "to get the list of loans/customers to accept under this policy."
+            )
+
+    except Exception as e:
+        st.error(f"Failed to compute acceptance strategy: {e}")
+
+    # 3.7 Feature importance (if available)
     if show_feature_importance:
-        st.markdown("#### 3.3 Feature importance (if available)")
+        st.markdown("#### 3.4 Feature importance (if available)")
 
         estimator = model
         if hasattr(model, "named_steps"):
@@ -505,7 +575,8 @@ def main():
 
     st.markdown(
         "The download file contains **one row per customer**, with `customer_id`, "
-        "engineered features, `pd_score`, and `predicted_label`."
+        "engineered features, `pd_score`, `predicted_label`, and "
+        "`accepted_2pct_strategy` (1 = accepted under 2% policy)."
     )
 
     csv_buffer = io.StringIO()
