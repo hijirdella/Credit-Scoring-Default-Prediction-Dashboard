@@ -89,7 +89,7 @@ def main():
     st.title("Credit Default Prediction Dashboard")
 
     st.markdown(
-        "This app takes raw payment-level data, performs EDA, "
+        "This app takes raw payment-level data (`combined_df`-style), performs EDA, "
         "and then runs the credit scoring model to generate default predictions."
     )
 
@@ -109,7 +109,7 @@ def main():
     show_feature_importance = st.sidebar.checkbox("Show feature importance", value=True)
     run_scoring = st.sidebar.button("Run scoring")
 
-    # File upload
+    # 1. File upload
     st.subheader("1. Upload raw payment-level CSV")
     uploaded_file = st.file_uploader("Upload combined_df-style CSV", type=["csv"])
 
