@@ -353,16 +353,18 @@ def main():
     pred_counts = scored_df["predicted_label"].value_counts().sort_index()
     total_pred = pred_counts.sum()
 
-    # Build summary with explicit mapping to labels and colors
+    # Label and color mapping (non-default = green, default = orange)
+    label_color_map = {
+        0: ("Non-default (0)", "#66BB6A"),  # green
+        1: ("Default (1)", "#FF8A00"),      # orange
+    }
+
     labels = []
     colors = []
-    for label_int in pred_counts.index:
-        if label_int == 0:
-            labels.append("Non-default (0)")
-            colors.append("#66BB6A")  # green
-        else:
-            labels.append("Default (1)")
-            colors.append("#FF8A00")  # orange
+    for k in pred_counts.index:
+        lbl, clr = label_color_map.get(k, (str(k), "#CCCCCC"))
+        labels.append(lbl)
+        colors.append(clr)
 
     pred_summary = (
         pred_counts.to_frame("count")
@@ -374,11 +376,11 @@ def main():
 
     st.dataframe(pred_summary)
 
-    # Bar and pie charts side by side, smaller size
+    # Two charts side by side with same height
     col_bar, col_pie = st.columns(2)
 
     with col_bar:
-        fig, ax = plt.subplots(figsize=(4, 3))
+        fig, ax = plt.subplots(figsize=(4, 4))
         ax.bar(
             pred_summary["label"],
             pred_summary["count"],
@@ -388,12 +390,12 @@ def main():
         ax.set_title("Prediction distribution (counts)")
         ax.set_xlabel("Predicted label")
         ax.set_ylabel("Number of customers")
-        plt.xticks(rotation=20, ha="right")
+        ax.tick_params(axis="x", rotation=15)
         fig.tight_layout()
         st.pyplot(fig)
 
     with col_pie:
-        fig, ax = plt.subplots(figsize=(4, 3))
+        fig, ax = plt.subplots(figsize=(4, 4))
         ax.pie(
             pred_summary["count"],
             labels=pred_summary["label"],
@@ -402,6 +404,8 @@ def main():
             colors=colors,
         )
         ax.set_title("Prediction share")
+        ax.axis("equal")
+        fig.tight_layout()
         st.pyplot(fig)
 
     # 3.5 Decile analysis based on predicted PD
