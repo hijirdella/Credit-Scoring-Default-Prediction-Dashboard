@@ -8,10 +8,9 @@ import joblib
 from credit_scoring_utils import build_customer_features_from_combined
 
 # Path to your saved model.
+# If your file name is different (e.g. best_credit_scoring_logreg.pkl),
+# change this string accordingly.
 MODEL_PATH = "credit_scoring_best_model.pkl"
-
-# Default table height so content can be scrolled
-TABLE_HEIGHT = 400
 
 
 @st.cache_resource
@@ -118,9 +117,7 @@ def main():
         "Output CSV file name",
         value="credit_default_predictions.csv",
     )
-    show_feature_importance = st.sidebar.checkbox(
-        "Show feature importance (if available)", value=True
-    )
+    show_feature_importance = st.sidebar.checkbox("Show feature importance (if available)", value=True)
     run_scoring = st.sidebar.button("Run scoring")
 
     # 1. Upload raw payment-level data
@@ -156,7 +153,7 @@ def main():
 
     st.markdown("**Raw data preview**")
     st.write(f"Shape: {df_raw.shape[0]} rows × {df_raw.shape[1]} columns")
-    st.dataframe(df_raw, height=TABLE_HEIGHT)
+    st.dataframe(df_raw.head())
 
     # 2. Exploratory Data Analysis
     st.subheader("2. Exploratory Data Analysis (EDA)")
@@ -167,11 +164,11 @@ def main():
     if num_summary.empty:
         st.write("No numeric columns found.")
     else:
-        st.dataframe(num_summary, height=TABLE_HEIGHT)
+        st.dataframe(num_summary)
 
     # 2.1b Column overview
     st.markdown("#### 2.2 Column overview")
-    st.dataframe(build_column_overview(df_raw), height=TABLE_HEIGHT)
+    st.dataframe(build_column_overview(df_raw))
 
     # 2.3 Numeric distributions
     st.markdown("#### 2.3 Numeric distributions (orange histograms)")
@@ -205,7 +202,7 @@ def main():
         if col in df_raw.columns:
             freq = cat_summary(df_raw, col, top_n=10)
             with st.expander(f"Distribution of {col}"):
-                st.dataframe(freq, height=TABLE_HEIGHT)
+                st.dataframe(freq)
                 fig = plot_bar_orange(
                     values=freq["count"].values,
                     labels=freq.index.astype(str).tolist(),
@@ -280,9 +277,7 @@ def main():
     st.subheader("3. Scoring and prediction (customer-level)")
 
     if not run_scoring:
-        st.info(
-            "Set the threshold in the sidebar and click **Run scoring** to generate predictions."
-        )
+        st.info("Set the threshold in the sidebar and click **Run scoring** to generate predictions.")
         return
 
     # 3.1 Build customer-level features
@@ -294,24 +289,20 @@ def main():
 
     st.markdown("**Customer-level feature preview**")
     st.write(f"Number of customers (rows): {df_features.shape[0]}")
-    st.dataframe(df_features, height=TABLE_HEIGHT)
+    st.dataframe(df_features.head())
 
     # 3.2 Load model
     try:
         model = load_model(MODEL_PATH)
     except Exception as e:
         st.error(f"Failed to load model from '{MODEL_PATH}': {e}")
-        st.info(
-            "Make sure the model file is in the repo root and the name matches MODEL_PATH."
-        )
+        st.info("Make sure the model file is in the repo root and the name matches MODEL_PATH.")
         return
 
     # 3.3 Prepare X and score
     try:
         # Drop ID and target columns if present
-        X = df_features.drop(
-            columns=["customer_id", "default_flag_customer"], errors="ignore"
-        ).copy()
+        X = df_features.drop(columns=["customer_id", "default_flag_customer"], errors="ignore").copy()
 
         # Identify numeric and non-numeric columns for simple imputation
         num_cols = X.select_dtypes(
@@ -351,7 +342,7 @@ def main():
 
     st.markdown("**Scored data preview (customer level)**")
     st.write(f"Total customers scored: {scored_df.shape[0]}")
-    st.dataframe(scored_df, height=TABLE_HEIGHT)
+    st.dataframe(scored_df.head())
 
     # 3.4 Prediction distribution
     st.markdown("#### 3.1 Prediction distribution")
@@ -366,32 +357,21 @@ def main():
             percentage=lambda x: (x["count"] / total_pred * 100).round(2),
         )
     )
-    st.dataframe(pred_summary, height=TABLE_HEIGHT)
+    st.dataframe(pred_summary)
 
-    # Bar chart with green for non-default, orange for default
-    fig, ax = plt.subplots()
-    bar_colors = []
-    for lbl in pred_summary["label"]:
-        if "Non-default" in lbl or "(0)" in lbl:
-            bar_colors.append("#66BB6A")  # green for non-default
-        else:
-            bar_colors.append("#FF8A00")  # orange for default
-    ax.bar(
-        pred_summary["label"],
-        pred_summary["count"],
-        color=bar_colors,
-        edgecolor="black",
+    # Bar chart (orange gradient)
+    fig = plot_bar_orange(
+        values=pred_summary["count"].values,
+        labels=pred_summary["label"].tolist(),
+        title="Prediction distribution (counts)",
+        xlabel="Predicted label",
+        ylabel="Number of customers",
     )
-    ax.set_xlabel("Predicted label")
-    ax.set_ylabel("Number of customers")
-    ax.set_title("Prediction distribution (counts)")
-    plt.xticks(rotation=0)
-    fig.tight_layout()
     st.pyplot(fig)
 
-    # Pie chart (non-default = green, default = orange)
+    # Pie chart (green allowed but not dominant)
     fig, ax = plt.subplots()
-    colors = ["#66BB6A", "#FF8A00"]  # non-default, default
+    colors = ["#66BB6A", "#FF8A00"]  # non-default = green, default = orange
     ax.pie(
         pred_summary["count"],
         labels=pred_summary["label"],
@@ -429,7 +409,7 @@ def main():
             decile_pd["n_customers"] / decile_pd["n_customers"].sum() * 100
         ).round(2)
 
-        st.dataframe(decile_pd, height=TABLE_HEIGHT)
+        st.dataframe(decile_pd)
 
         fig = plot_bar_orange(
             values=decile_pd["avg_pd"].values,
@@ -488,7 +468,7 @@ def main():
                 }
             ).sort_values("importance", ascending=False)
 
-            st.dataframe(fi, height=TABLE_HEIGHT)
+            st.dataframe(fi)
 
             top_fi = fi.head(10)
             fig = plot_bar_orange(
