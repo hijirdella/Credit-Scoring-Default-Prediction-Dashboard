@@ -5,22 +5,27 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import joblib
 
-import creditdefault as cd  # local module with predict_raw_data()
+from credit_scoring_utils import build_customer_features_from_combined
 
+# Path to your saved model.
+# If your file name is different (e.g. best_credit_scoring_logreg.pkl),
+# change this string accordingly.
 MODEL_PATH = "credit_scoring_best_model.pkl"
 
 
 @st.cache_resource
 def load_model(model_path: str):
     """
-    Load trained model from disk.
+    Load trained model pipeline from disk.
     """
-    return joblib.load(model_path)
+    model = joblib.load(model_path)
+    return model
 
 
 def cast_id_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Make sure ID-like columns are stored as pandas string dtype.
+    Ensure ID-like columns are stored as pandas string dtype.
+    This avoids showing IDs as 2003023548799.0.
     """
     id_cols = ["application_id", "customer_id", "loan_id", "payment_id"]
     for col in id_cols:
@@ -31,14 +36,19 @@ def cast_id_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_column_overview(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Build summary of columns: dtype, missing count, missing percentage.
+    Build a simple overview of columns:
+    - dtype
+    - number of missing values
+    - percentage of missing values
     """
-    overview = pd.DataFrame({
-        "column": df.columns,
-        "dtype": df.dtypes.astype(str),
-        "n_missing": df.isna().sum(),
-        "missing_pct": (df.isna().sum() / len(df) * 100).round(2)
-    })
+    overview = pd.DataFrame(
+        {
+            "column": df.columns,
+            "dtype": df.dtypes.astype(str),
+            "n_missing": df.isna().sum(),
+            "missing_pct": (df.isna().sum() / len(df) * 100).round(2),
+        }
+    )
     return overview
 
 
@@ -56,7 +66,7 @@ def numeric_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 def cat_summary(df: pd.DataFrame, col: str, top_n: int = 10) -> pd.DataFrame:
     """
-    Frequency table for a categorical column.
+    Frequency table for a categorical column (top N levels).
     """
     vc = df[col].value_counts(dropna=False)
     total = vc.sum()
@@ -89,11 +99,12 @@ def main():
     st.title("Credit Default Prediction Dashboard")
 
     st.markdown(
-        "This app takes raw payment-level data (`combined_df`-style), performs EDA, "
-        "and then runs the credit scoring model to generate default predictions."
+        "This app takes **raw payment-level data** (combined_df style), "
+        "performs basic EDA, then aggregates to **customer-level features** "
+        "and runs the saved credit scoring model to generate default predictions."
     )
 
-    # Sidebar settings
+    # Sidebar controls
     st.sidebar.header("Settings")
     threshold = st.sidebar.slider(
         "Prediction threshold (default = 0.5)",
@@ -103,30 +114,49 @@ def main():
         step=0.01,
     )
     default_filename = st.sidebar.text_input(
-        "Default output CSV file name",
+        "Output CSV file name",
         value="credit_default_predictions.csv",
     )
-    show_feature_importance = st.sidebar.checkbox("Show feature importance", value=True)
+    show_feature_importance = st.sidebar.checkbox("Show feature importance (if available)", value=True)
     run_scoring = st.sidebar.button("Run scoring")
 
-    # 1. File upload
+    # 1. Upload raw payment-level data
     st.subheader("1. Upload raw payment-level CSV")
-    uploaded_file = st.file_uploader("Upload combined_df-style CSV", type=["csv"])
+
+    st.markdown(
+        "Upload a **combined_df-style** CSV. "
+        "The app expects payment-level rows with columns such as "
+        "`customer_id`, `loan_id`, `loan_amount`, `installment_amount`, `paid_amount`, `dpd`, etc."
+    )
+
+    uploaded_file = st.file_uploader("Upload combined_df CSV", type=["csv"])
 
     if uploaded_file is None:
         st.info("Please upload a CSV file to continue.")
         return
 
-    # Read and type-cast raw data
-    df_raw = pd.read_csv(uploaded_file)
+    # Keep ID columns as string when reading
+    try:
+        df_raw = pd.read_csv(
+            uploaded_file,
+            dtype={
+                "application_id": str,
+                "customer_id": str,
+                "loan_id": str,
+                "payment_id": str,
+            },
+        )
+    except Exception:
+        df_raw = pd.read_csv(uploaded_file)
+
     df_raw = cast_id_columns(df_raw)
 
     st.markdown("**Raw data preview**")
     st.write(f"Shape: {df_raw.shape[0]} rows × {df_raw.shape[1]} columns")
     st.dataframe(df_raw.head())
 
-    # 2. EDA
-    st.subheader("2. Exploratory Data Analysis")
+    # 2. Exploratory Data Analysis
+    st.subheader("2. Exploratory Data Analysis (EDA)")
 
     # 2.1 Numeric summary
     st.markdown("#### 2.1 Numeric summary")
@@ -137,24 +167,37 @@ def main():
         st.dataframe(num_summary)
 
     # 2.1b Column overview
-    st.markdown("#### 2.1b Columns overview")
+    st.markdown("#### 2.2 Column overview")
     st.dataframe(build_column_overview(df_raw))
 
-    # 2.2 Numeric distributions (orange histograms)
-    st.markdown("#### 2.2 Numeric distributions")
+    # 2.3 Numeric distributions
+    st.markdown("#### 2.3 Numeric distributions (orange histograms)")
     numeric_candidates = ["loan_amount", "installment_amount", "paid_amount", "dpd"]
     for col in numeric_candidates:
         if col in df_raw.columns:
             fig, ax = plt.subplots()
-            df_raw[col].dropna().hist(bins=40, ax=ax, color="#FF8A00", edgecolor="black")
+            df_raw[col].dropna().hist(
+                bins=40,
+                ax=ax,
+                color="#FF8A00",  # orange
+                edgecolor="black",
+            )
             ax.set_title(f"Distribution of {col}")
             ax.set_xlabel(col)
             ax.set_ylabel("Count")
             st.pyplot(fig)
 
-    # 2.3 Categorical distributions (orange-dominant)
-    st.markdown("#### 2.3 Categorical distributions")
-    cat_cols = ["address_provinsi", "loan_purpose", "marital_status", "job_type", "job_industry", "dependent"]
+    # 2.4 Categorical distributions
+    st.markdown("#### 2.4 Categorical distributions (top categories)")
+
+    cat_cols = [
+        "address_provinsi",
+        "loan_purpose",
+        "marital_status",
+        "job_type",
+        "job_industry",
+        "dependent",
+    ]
     for col in cat_cols:
         if col in df_raw.columns:
             freq = cat_summary(df_raw, col, top_n=10)
@@ -169,11 +212,17 @@ def main():
                 )
                 st.pyplot(fig)
 
-    # 2.4 Simple relationships
-    st.markdown("#### 2.4 Relationships between variables")
+    # 2.5 Simple relationships
+    st.markdown("#### 2.5 Simple relationships between key variables")
+
     if {"loan_amount", "installment_amount"}.issubset(df_raw.columns):
         fig, ax = plt.subplots()
-        ax.scatter(df_raw["loan_amount"], df_raw["installment_amount"], alpha=0.3, color="#FFA726")
+        ax.scatter(
+            df_raw["loan_amount"],
+            df_raw["installment_amount"],
+            alpha=0.3,
+            color="#FFA726",  # orange
+        )
         ax.set_xlabel("loan_amount")
         ax.set_ylabel("installment_amount")
         ax.set_title("Loan amount vs Installment amount")
@@ -181,7 +230,12 @@ def main():
 
     if {"installment_amount", "paid_amount"}.issubset(df_raw.columns):
         fig, ax = plt.subplots()
-        ax.scatter(df_raw["installment_amount"], df_raw["paid_amount"], alpha=0.3, color="#FFB74D")
+        ax.scatter(
+            df_raw["installment_amount"],
+            df_raw["paid_amount"],
+            alpha=0.3,
+            color="#FFB74D",  # orange
+        )
         ax.set_xlabel("installment_amount")
         ax.set_ylabel("paid_amount")
         ax.set_title("Installment amount vs Paid amount")
@@ -189,14 +243,20 @@ def main():
 
     if {"dpd", "loan_amount"}.issubset(df_raw.columns):
         fig, ax = plt.subplots()
-        ax.scatter(df_raw["loan_amount"], df_raw["dpd"], alpha=0.3, color="#FFCC80")
+        ax.scatter(
+            df_raw["loan_amount"],
+            df_raw["dpd"],
+            alpha=0.3,
+            color="#FFCC80",  # lighter orange
+        )
         ax.set_xlabel("loan_amount")
         ax.set_ylabel("dpd")
         ax.set_title("DPD vs Loan amount")
         st.pyplot(fig)
 
-    # 2.5 Correlation heatmap (orange gradient, pure matplotlib)
-    st.markdown("#### 2.5 Correlation heatmap")
+    # 2.6 Correlation heatmap
+    st.markdown("#### 2.6 Correlation heatmap (numeric features)")
+
     num_cols_for_corr = df_raw.select_dtypes(include=[np.number]).columns.tolist()
     if len(num_cols_for_corr) >= 2:
         corr = df_raw[num_cols_for_corr].corr()
@@ -213,49 +273,83 @@ def main():
     else:
         st.write("Not enough numeric features for a correlation heatmap.")
 
-    # 3. Scoring and prediction-based analysis
-    st.subheader("3. Scoring and label analysis based on model predictions")
+    # 3. Scoring section (no behavior label analysis, directly prediction)
+    st.subheader("3. Scoring and prediction (customer-level)")
 
     if not run_scoring:
-        st.info("Set the threshold in the sidebar and click 'Run scoring' to generate predictions.")
+        st.info("Set the threshold in the sidebar and click **Run scoring** to generate predictions.")
         return
 
-    # Load model
+    # 3.1 Build customer-level features
+    try:
+        df_features = build_customer_features_from_combined(df_raw)
+    except Exception as e:
+        st.error(f"Failed to build customer-level features: {e}")
+        return
+
+    st.markdown("**Customer-level feature preview**")
+    st.write(f"Number of customers (rows): {df_features.shape[0]}")
+    st.dataframe(df_features.head())
+
+    # 3.2 Load model
     try:
         model = load_model(MODEL_PATH)
     except Exception as e:
         st.error(f"Failed to load model from '{MODEL_PATH}': {e}")
+        st.info("Make sure the model file is in the repo root and the name matches MODEL_PATH.")
         return
 
-    # Run prediction via creditdefault.py
+    # 3.3 Prepare X and score
     try:
-        scored_df = cd.predict_raw_data(model, df_raw, threshold=threshold)
+        # Drop ID and target columns if present
+        X = df_features.drop(columns=["customer_id", "default_flag_customer"], errors="ignore").copy()
+
+        # Identify numeric and non-numeric columns for simple imputation
+        num_cols = X.select_dtypes(
+            include=["int64", "float64", "Int64", "float32", "int32"]
+        ).columns
+        cat_cols = X.columns.difference(num_cols)
+
+        # Numeric: median fill
+        for col in num_cols:
+            median_val = X[col].median()
+            X[col] = X[col].fillna(median_val)
+
+        # Categorical: "missing"
+        for col in cat_cols:
+            X[col] = X[col].fillna("missing")
+
+        # Final safety: replace remaining NaN or inf
+        X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        # Predict PD
+        if hasattr(model, "predict_proba"):
+            pd_score = model.predict_proba(X)[:, 1]
+        else:
+            # Backup if model exposes decision_function only
+            s = model.decision_function(X)
+            pd_score = (s - s.min()) / (s.max() - s.min() + 1e-9)
+
     except Exception as e:
-        st.error(f"Error during prediction in creditdefault.predict_raw_data: {e}")
+        st.error(f"Error during prediction: {e}")
         return
 
-    scored_df = cast_id_columns(scored_df)
+    # Attach scores and labels
+    df_features["pd_score"] = pd_score
+    df_features["predicted_label"] = (df_features["pd_score"] >= threshold).astype(int)
 
-    st.markdown("**Scored data preview**")
+    scored_df = df_features.copy()
+
+    st.markdown("**Scored data preview (customer level)**")
     st.write(f"Total customers scored: {scored_df.shape[0]}")
     st.dataframe(scored_df.head())
 
-    # Determine probability column
-    if "pd" in scored_df.columns:
-        score_col = "pd"
-    else:
-        num_cols_scored = scored_df.select_dtypes(include=[np.number]).columns
-        if len(num_cols_scored) == 0:
-            st.error("No numeric column found in scored data to use as probability.")
-            return
-        score_col = num_cols_scored[0]
+    # 3.4 Prediction distribution
+    st.markdown("#### 3.1 Prediction distribution")
 
-    scored_df["predicted_label"] = (scored_df[score_col] >= threshold).astype(int)
-
-    # 3.1 Prediction distribution
-    st.markdown("#### 3.1 Prediction distribution (model-based labels)")
     pred_counts = scored_df["predicted_label"].value_counts().sort_index()
     total_pred = pred_counts.sum()
+
     pred_summary = (
         pred_counts.to_frame("count")
         .assign(
@@ -265,16 +359,17 @@ def main():
     )
     st.dataframe(pred_summary)
 
+    # Bar chart (orange gradient)
     fig = plot_bar_orange(
         values=pred_summary["count"].values,
         labels=pred_summary["label"].tolist(),
-        title="Prediction distribution",
+        title="Prediction distribution (counts)",
         xlabel="Predicted label",
         ylabel="Number of customers",
     )
     st.pyplot(fig)
 
-    # Pie chart (green as secondary color only)
+    # Pie chart (green allowed but not dominant)
     fig, ax = plt.subplots()
     colors = ["#66BB6A", "#FF8A00"]  # non-default = green, default = orange
     ax.pie(
@@ -287,23 +382,33 @@ def main():
     ax.set_title("Prediction share")
     st.pyplot(fig)
 
-    # 3.2 Decile analysis using predicted PD
-    st.markdown("#### 3.2 Decile analysis based on predicted PD")
+    # 3.5 Decile analysis based on predicted PD
+    st.markdown("#### 3.2 PD decile analysis (by predicted probability)")
+
     try:
-        tmp_dec = scored_df.copy()
-        tmp_dec["decile"] = pd.qcut(tmp_dec[score_col], 10, labels=False, duplicates="drop") + 1
+        tmp_dec = scored_df[["customer_id", "pd_score", "predicted_label"]].copy()
+        tmp_dec["decile"] = pd.qcut(
+            tmp_dec["pd_score"],
+            10,
+            labels=False,
+            duplicates="drop",
+        ) + 1
+
         decile_pd = (
             tmp_dec.groupby("decile")
             .agg(
                 n_customers=("decile", "size"),
-                avg_pd=(score_col, "mean"),
+                avg_pd=("pd_score", "mean"),
                 default_rate=("predicted_label", "mean"),
             )
             .sort_index()
         )
         decile_pd["avg_pd"] = decile_pd["avg_pd"].round(4)
         decile_pd["default_rate"] = (decile_pd["default_rate"] * 100).round(2)
-        decile_pd["share_pct"] = (decile_pd["n_customers"] / decile_pd["n_customers"].sum() * 100).round(2)
+        decile_pd["share_pct"] = (
+            decile_pd["n_customers"] / decile_pd["n_customers"].sum() * 100
+        ).round(2)
+
         st.dataframe(decile_pd)
 
         fig = plot_bar_orange(
@@ -314,14 +419,17 @@ def main():
             ylabel="Average PD",
         )
         st.pyplot(fig)
+
     except Exception as e:
         st.error(f"Failed to compute PD deciles: {e}")
 
-    # 3.3 Feature importance (optional)
+    # 3.6 Feature importance (if available)
     if show_feature_importance:
         st.markdown("#### 3.3 Feature importance (if available)")
+
         estimator = model
         if hasattr(model, "named_steps"):
+            # Try common step names in a pipeline
             for step_name in ["model", "clf", "classifier", "final_estimator"]:
                 if step_name in model.named_steps:
                     estimator = model.named_steps[step_name]
@@ -330,8 +438,10 @@ def main():
         importances = None
         feature_names = None
 
+        # Tree-based models
         if hasattr(estimator, "feature_importances_"):
             importances = estimator.feature_importances_
+        # Linear models (e.g. Logistic Regression)
         elif hasattr(estimator, "coef_"):
             coef = estimator.coef_
             if coef.ndim == 1:
@@ -339,22 +449,24 @@ def main():
             else:
                 importances = np.abs(coef[0])
 
+        # Try to get feature names from the model if available
         if hasattr(model, "feature_names_in_"):
             feature_names = list(model.feature_names_in_)
         else:
-            feature_names = [
-                c for c in scored_df.columns
-                if c not in ["customer_id", "application_id", "loan_id", "pd", "predicted_label"]
-                and scored_df[c].dtype != "string[python]"
-            ]
+            # Fallback: X columns
+            feature_names = list(X.columns)
 
         if importances is None or feature_names is None:
             st.info("Feature importance is not available for this model.")
         else:
-            fi = pd.DataFrame({
-                "feature": feature_names,
-                "importance": importances,
-            }).sort_values("importance", ascending=False)
+            # Align lengths if needed
+            min_len = min(len(importances), len(feature_names))
+            fi = pd.DataFrame(
+                {
+                    "feature": feature_names[:min_len],
+                    "importance": importances[:min_len],
+                }
+            ).sort_values("importance", ascending=False)
 
             st.dataframe(fi)
 
@@ -368,10 +480,17 @@ def main():
             )
             st.pyplot(fig)
 
-    # 4. Download scored output
+    # 4. Download scored predictions
     st.subheader("4. Download scored predictions")
+
+    st.markdown(
+        "The download file contains **one row per customer**, with `customer_id`, "
+        "engineered features, `pd_score`, and `predicted_label`."
+    )
+
     csv_buffer = io.StringIO()
     scored_df.to_csv(csv_buffer, index=False)
+
     st.download_button(
         label="Download predictions as CSV",
         data=csv_buffer.getvalue(),
