@@ -7,9 +7,7 @@ import joblib
 
 from credit_scoring_utils import build_customer_features_from_combined
 
-# Path to your saved model.
-# If your file name is different (e.g. best_credit_scoring_logreg.pkl),
-# change this string accordingly.
+# Path to your saved model
 MODEL_PATH = "credit_scoring_best_model.pkl"
 
 
@@ -117,7 +115,9 @@ def main():
         "Output CSV file name",
         value="credit_default_predictions.csv",
     )
-    show_feature_importance = st.sidebar.checkbox("Show feature importance (if available)", value=True)
+    show_feature_importance = st.sidebar.checkbox(
+        "Show feature importance (if available)", value=True
+    )
     run_scoring = st.sidebar.button("Run scoring")
 
     # 1. Upload raw payment-level data
@@ -126,7 +126,8 @@ def main():
     st.markdown(
         "Upload a **combined_df-style** CSV. "
         "The app expects payment-level rows with columns such as "
-        "`customer_id`, `loan_id`, `loan_amount`, `installment_amount`, `paid_amount`, `dpd`, etc."
+        "`customer_id`, `loan_id`, `loan_amount`, `installment_amount`, "
+        "`paid_amount`, `dpd`, etc."
     )
 
     uploaded_file = st.file_uploader("Upload combined_df CSV", type=["csv"])
@@ -166,7 +167,7 @@ def main():
     else:
         st.dataframe(num_summary)
 
-    # 2.1b Column overview
+    # 2.2 Column overview
     st.markdown("#### 2.2 Column overview")
     st.dataframe(build_column_overview(df_raw))
 
@@ -179,7 +180,7 @@ def main():
             df_raw[col].dropna().hist(
                 bins=40,
                 ax=ax,
-                color="#FF8A00",  # orange
+                color="#FF8A00",
                 edgecolor="black",
             )
             ax.set_title(f"Distribution of {col}")
@@ -221,7 +222,7 @@ def main():
             df_raw["loan_amount"],
             df_raw["installment_amount"],
             alpha=0.3,
-            color="#FFA726",  # orange
+            color="#FFA726",
         )
         ax.set_xlabel("loan_amount")
         ax.set_ylabel("installment_amount")
@@ -234,7 +235,7 @@ def main():
             df_raw["installment_amount"],
             df_raw["paid_amount"],
             alpha=0.3,
-            color="#FFB74D",  # orange
+            color="#FFB74D",
         )
         ax.set_xlabel("installment_amount")
         ax.set_ylabel("paid_amount")
@@ -247,7 +248,7 @@ def main():
             df_raw["loan_amount"],
             df_raw["dpd"],
             alpha=0.3,
-            color="#FFCC80",  # lighter orange
+            color="#FFCC80",
         )
         ax.set_xlabel("loan_amount")
         ax.set_ylabel("dpd")
@@ -302,7 +303,10 @@ def main():
     # 3.3 Prepare X and score
     try:
         # Drop ID and target columns if present
-        X = df_features.drop(columns=["customer_id", "default_flag_customer"], errors="ignore").copy()
+        X = df_features.drop(
+            columns=["customer_id", "default_flag_customer"],
+            errors="ignore",
+        ).copy()
 
         # Identify numeric and non-numeric columns for simple imputation
         num_cols = X.select_dtypes(
@@ -326,7 +330,6 @@ def main():
         if hasattr(model, "predict_proba"):
             pd_score = model.predict_proba(X)[:, 1]
         else:
-            # Backup if model exposes decision_function only
             s = model.decision_function(X)
             pd_score = (s - s.min()) / (s.max() - s.min() + 1e-9)
 
@@ -350,37 +353,56 @@ def main():
     pred_counts = scored_df["predicted_label"].value_counts().sort_index()
     total_pred = pred_counts.sum()
 
+    # Build summary with explicit mapping to labels and colors
+    labels = []
+    colors = []
+    for label_int in pred_counts.index:
+        if label_int == 0:
+            labels.append("Non-default (0)")
+            colors.append("#66BB6A")  # green
+        else:
+            labels.append("Default (1)")
+            colors.append("#FF8A00")  # orange
+
     pred_summary = (
         pred_counts.to_frame("count")
         .assign(
-            label=lambda x: ["Non-default (0)", "Default (1)"][: len(x)],
+            label=labels,
             percentage=lambda x: (x["count"] / total_pred * 100).round(2),
         )
     )
+
     st.dataframe(pred_summary)
 
-    # Bar chart (orange gradient)
-    fig = plot_bar_orange(
-        values=pred_summary["count"].values,
-        labels=pred_summary["label"].tolist(),
-        title="Prediction distribution (counts)",
-        xlabel="Predicted label",
-        ylabel="Number of customers",
-    )
-    st.pyplot(fig)
+    # Bar and pie charts side by side, smaller size
+    col_bar, col_pie = st.columns(2)
 
-    # Pie chart (green allowed but not dominant)
-    fig, ax = plt.subplots()
-    colors = ["#66BB6A", "#FF8A00"]  # non-default = green, default = orange
-    ax.pie(
-        pred_summary["count"],
-        labels=pred_summary["label"],
-        autopct="%1.1f%%",
-        startangle=90,
-        colors=colors[: len(pred_summary)],
-    )
-    ax.set_title("Prediction share")
-    st.pyplot(fig)
+    with col_bar:
+        fig, ax = plt.subplots(figsize=(4, 3))
+        ax.bar(
+            pred_summary["label"],
+            pred_summary["count"],
+            color=colors,
+            edgecolor="black",
+        )
+        ax.set_title("Prediction distribution (counts)")
+        ax.set_xlabel("Predicted label")
+        ax.set_ylabel("Number of customers")
+        plt.xticks(rotation=20, ha="right")
+        fig.tight_layout()
+        st.pyplot(fig)
+
+    with col_pie:
+        fig, ax = plt.subplots(figsize=(4, 3))
+        ax.pie(
+            pred_summary["count"],
+            labels=pred_summary["label"],
+            autopct="%1.1f%%",
+            startangle=90,
+            colors=colors,
+        )
+        ax.set_title("Prediction share")
+        st.pyplot(fig)
 
     # 3.5 Decile analysis based on predicted PD
     st.markdown("#### 3.2 PD decile analysis (by predicted probability)")
@@ -429,7 +451,6 @@ def main():
 
         estimator = model
         if hasattr(model, "named_steps"):
-            # Try common step names in a pipeline
             for step_name in ["model", "clf", "classifier", "final_estimator"]:
                 if step_name in model.named_steps:
                     estimator = model.named_steps[step_name]
@@ -438,10 +459,8 @@ def main():
         importances = None
         feature_names = None
 
-        # Tree-based models
         if hasattr(estimator, "feature_importances_"):
             importances = estimator.feature_importances_
-        # Linear models (e.g. Logistic Regression)
         elif hasattr(estimator, "coef_"):
             coef = estimator.coef_
             if coef.ndim == 1:
@@ -449,17 +468,14 @@ def main():
             else:
                 importances = np.abs(coef[0])
 
-        # Try to get feature names from the model if available
         if hasattr(model, "feature_names_in_"):
             feature_names = list(model.feature_names_in_)
         else:
-            # Fallback: X columns
             feature_names = list(X.columns)
 
         if importances is None or feature_names is None:
             st.info("Feature importance is not available for this model.")
         else:
-            # Align lengths if needed
             min_len = min(len(importances), len(feature_names))
             fi = pd.DataFrame(
                 {
